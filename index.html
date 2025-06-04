@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🎤 Conversational Voice Agent</title>
+  <link rel="stylesheet" href="static\style.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎤 Conversational Voice Agent</h1>
+      <p class="subtitle">Click &amp; speak to chat in real time</p>
+    </header>
+
+    <main>
+      <button id="recordBtn" class="btn-record">
+        <span id="btnIcon">🎙️</span>
+        <span id="btnLabel">Start Recording</span>
+      </button>
+      <p id="status" class="status-text">Click “Start Recording” to speak</p>
+
+      <section class="output-block">
+        <h2>Transcription</h2>
+        <pre id="transcription" class="output-area"></pre>
+      </section>
+
+      <section class="output-block">
+        <h2>Response</h2>
+        <pre id="response" class="output-area"></pre>
+      </section>
+
+      <section class="output-block" id="audioSection">
+        <h2>Audio Reply</h2>
+        <audio id="audioReply" controls></audio>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const recordBtn = document.getElementById("recordBtn");
+    const btnIcon = document.getElementById("btnIcon");
+    const btnLabel = document.getElementById("btnLabel");
+    const statusEl = document.getElementById("status");
+    const transcriptionEl = document.getElementById("transcription");
+    const responseEl = document.getElementById("response");
+    const audioReplyEl = document.getElementById("audioReply");
+    const audioSection = document.getElementById("audioSection");
+
+    let mediaRecorder;
+    let audioChunks = [];
+
+    recordBtn.addEventListener("click", async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        // Stop recording
+        mediaRecorder.stop();
+        recordBtn.disabled = true;
+        statusEl.textContent = "Processing audio…";
+        btnIcon.textContent = "⏳";
+        btnLabel.textContent = "Processing…";
+      } else {
+        // Reset UI
+        transcriptionEl.textContent = "";
+        responseEl.textContent = "";
+        audioReplyEl.src = "";
+        audioSection.style.display = "none";
+
+        // Ask permission and start recording
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (e) => {
+          audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+          audioChunks = [];
+
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.wav");
+
+          try {
+            const res = await fetch("/chat", {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!res.ok) throw new Error("Server error");
+
+            const data = await res.json();
+            transcriptionEl.textContent = data.transcription || "—";
+            responseEl.textContent = data.response || "—";
+
+            if (data.audio_reply_url) {
+              audioReplyEl.src = data.audio_reply_url;
+              audioSection.style.display = "block";
+              // Auto‐play after a short delay to allow rendering
+              setTimeout(() => audioReplyEl.play(), 200);
+            }
+          } catch (err) {
+            statusEl.textContent = "Error: " + err.message;
+          } finally {
+            recordBtn.disabled = false;
+            btnIcon.textContent = "🎙️";
+            btnLabel.textContent = "Start Recording";
+            statusEl.textContent = "Click “Start Recording” to speak";
+          }
+        };
+
+        audioChunks = [];
+        mediaRecorder.start();
+        statusEl.textContent = "Recording… Click again to stop.";
+        btnIcon.textContent = "⏹️";
+        btnLabel.textContent = "Stop Recording";
+      }
+    });
+  </script>
+</body>
+</html>
